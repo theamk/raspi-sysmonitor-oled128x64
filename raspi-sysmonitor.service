@@ -1,0 +1,11 @@
+[Unit]
+Description=Raspberry Pi system monitor on SSD1306 OLED
+
+[Service]
+ExecStart=/usr/local/bin/raspi-sysmonitor
+User=dietpi
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
