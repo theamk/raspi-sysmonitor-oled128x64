@@ -2,9 +2,11 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"image"
 	"image/draw"
 	"log"
+	"strings"
 	"time"
 
 	"golang.org/x/image/font"
@@ -20,6 +22,14 @@ func drawLine(img draw.Image, line int, s string) {
 		Face: inconsolata.Regular8x16,
 		Dot:  fixed.P(0, 13+16*line),
 	}).DrawString(s)
+}
+
+// justify puts right at the end of a cols-wide line, with left at the start.
+func justify(left, right string, cols int) string {
+	if pad := cols - len(left) - len(right); pad > 0 {
+		return left + strings.Repeat(" ", pad) + right
+	}
+	return left + " " + right
 }
 
 func render(d *oled, lines ...string) {
@@ -52,6 +62,11 @@ func main() {
 		log.Fatal(err)
 	}
 
+	cpu, err := newCPUSampler()
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	render(d, "Loading...")
 	time.Sleep(2 * time.Second)
 
@@ -62,8 +77,13 @@ func main() {
 
 	tick := time.NewTicker(time.Second)
 	defer tick.Stop()
+	cols := d.Width / 8 // Inconsolata 8x16 glyph width
 	for {
-		render(d, time.Now().Format("15:04:05"))
+		load, err := cpu.Percent()
+		if err != nil {
+			log.Fatal(err)
+		}
+		render(d, justify(fmt.Sprintf("CPU %.0f%%", load), time.Now().Format("15:04:05"), cols))
 		select {
 		case <-tick.C:
 		case <-deadline:
