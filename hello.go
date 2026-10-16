@@ -42,6 +42,18 @@ func render(d *oled, lines ...string) {
 	}
 }
 
+func wifiLine(w *wifiSampler, cols int) string {
+	info, ok, err := w.Sample()
+	if err != nil {
+		log.Fatal(err)
+	}
+	if !ok {
+		return "NO WIFI"
+	}
+	return justify(fmt.Sprintf("Q%.0f", info.Link),
+		fmt.Sprintf("R%s T%s", humanBytes(info.RxD), humanBytes(info.TxD)), cols)
+}
+
 func main() {
 	runFor := flag.Duration("duration", 0, "exit after this long (0 = run forever)")
 	flag.Parse()
@@ -70,6 +82,11 @@ func main() {
 	render(d, "Loading...")
 	time.Sleep(2 * time.Second)
 
+	var wifi wifiSampler
+	if _, _, err := wifi.Sample(); err != nil { // baseline for traffic deltas
+		log.Fatal(err)
+	}
+
 	var deadline <-chan time.Time
 	if *runFor > 0 {
 		deadline = time.After(*runFor)
@@ -83,7 +100,10 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		render(d, justify(fmt.Sprintf("CPU %.0f%%", load), time.Now().Format("15:04:05"), cols))
+		render(d,
+			justify(fmt.Sprintf("CPU %.0f%%", load), time.Now().Format("15:04:05"), cols),
+			wifiLine(&wifi, cols),
+		)
 		select {
 		case <-tick.C:
 		case <-deadline:
