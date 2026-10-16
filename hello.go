@@ -54,6 +54,14 @@ func wifiLine(w *wifiSampler, cols int) string {
 		fmt.Sprintf("R%s T%s", humanBytes(info.RxD), humanBytes(info.TxD)), cols)
 }
 
+func tempLabel() string {
+	t, err := cpuTemp()
+	if err != nil {
+		return "--C"
+	}
+	return fmt.Sprintf("%.0fC", t)
+}
+
 func main() {
 	runFor := flag.Duration("duration", 0, "exit after this long (0 = run forever)")
 	flip := flag.Bool("flip", true, "rotate the display 180 degrees")
@@ -114,7 +122,7 @@ func main() {
 		}
 		app1, app2 := app.lines(cols)
 		lines := []string{
-			justify(fmt.Sprintf("CPU %.0f%%", load), time.Now().Format("15:04:05"), cols),
+			justify(fmt.Sprintf("%s %.0f%%", tempLabel(), load), time.Now().Format("15:04:05"), cols),
 			wifiLine(&wifi, cols),
 			app1,
 			app2,

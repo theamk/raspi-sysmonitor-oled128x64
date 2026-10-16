@@ -10,6 +10,19 @@ import (
 
 type cpuSampler struct{ total, idle uint64 }
 
+// cpuTemp returns the CPU temperature in degrees C from hwmon0 (reported in 1/1000 C).
+func cpuTemp() (float64, error) {
+	b, err := os.ReadFile("/sys/class/hwmon/hwmon0/temp1_input")
+	if err != nil {
+		return 0, err
+	}
+	milli, err := strconv.ParseInt(strings.TrimSpace(string(b)), 10, 64)
+	if err != nil {
+		return 0, err
+	}
+	return float64(milli) / 1000, nil
+}
+
 func readCPU() (total, idle uint64, err error) {
 	f, err := os.Open("/proc/stat")
 	if err != nil {
