@@ -57,11 +57,16 @@ func wifiLine(w *wifiSampler, cols int) string {
 func main() {
 	runFor := flag.Duration("duration", 0, "exit after this long (0 = run forever)")
 	flip := flag.Bool("flip", true, "rotate the display 180 degrees")
+	showVersion := flag.Bool("version", false, "print app name and build info, then exit")
 	logEvery := flag.Duration("log-interval", 10*time.Minute, "how often to log the displayed lines to stderr after the first render (0 = only once)")
 	app := appInfoSource{}
 	flag.StringVar(&app.Path, "appinfo-file", "/dev/shm/app-info", "main app status file")
 	flag.DurationVar(&app.Stale, "appinfo-timeout", 60*time.Second, "age after which the app status is shown as stale")
 	flag.Parse()
+	if *showVersion {
+		fmt.Println(versionString())
+		return
+	}
 	log.Printf("starting: flip=%v log-interval=%v appinfo-file=%s appinfo-timeout=%v", *flip, *logEvery, app.Path, app.Stale)
 
 	lock, err := acquireLock("/tmp/sysmonitor.lock")
