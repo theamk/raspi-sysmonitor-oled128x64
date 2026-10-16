@@ -56,6 +56,9 @@ func wifiLine(w *wifiSampler, cols int) string {
 
 func main() {
 	runFor := flag.Duration("duration", 0, "exit after this long (0 = run forever)")
+	app := appInfoSource{}
+	flag.StringVar(&app.Path, "appinfo-file", "/dev/shm/app-info", "main app status file")
+	flag.DurationVar(&app.Stale, "appinfo-timeout", 60*time.Second, "age after which the app status is shown as stale")
 	flag.Parse()
 
 	lock, err := acquireLock("/tmp/sysmonitor.lock")
@@ -100,9 +103,12 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
+		app1, app2 := app.lines(cols)
 		render(d,
 			justify(fmt.Sprintf("CPU %.0f%%", load), time.Now().Format("15:04:05"), cols),
 			wifiLine(&wifi, cols),
+			app1,
+			app2,
 		)
 		select {
 		case <-tick.C:
