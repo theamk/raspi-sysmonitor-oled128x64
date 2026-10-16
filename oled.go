@@ -10,14 +10,14 @@ import (
 
 const (
 	i2cSlave = 0x0703
-	width    = 128
-	height   = 64
 	chunk    = 16 // data bytes per I2C transaction
 )
 
 type oled struct {
-	f    *os.File
-	flip bool
+	Width, Height int
+	Img           *image.RGBA
+	f             *os.File
+	flip          bool
 }
 
 func openOLED(bus, addr int, flip bool) (*oled, error) {
@@ -29,7 +29,8 @@ func openOLED(bus, addr int, flip bool) (*oled, error) {
 		f.Close()
 		return nil, errno
 	}
-	return &oled{f: f, flip: flip}, nil
+	const w, h = 128, 64
+	return &oled{Width: w, Height: h, Img: image.NewRGBA(image.Rect(0, 0, w, h)), f: f, flip: flip}, nil
 }
 
 func (o *oled) Close() error { return o.f.Close() }
@@ -70,17 +71,17 @@ func (o *oled) init() error {
 	return nil
 }
 
-// show converts img (width x height) to SSD1306 page format and writes it.
-func (o *oled) show(img image.Image) error {
-	buf := make([]byte, width*height/8)
-	for y := 0; y < height; y++ {
-		for x := 0; x < width; x++ {
-			if color.GrayModel.Convert(img.At(x, y)).(color.Gray).Y > 127 {
-				buf[(y/8)*width+x] |= 1 << (y % 8)
+// show converts Img to SSD1306 page format and writes it.
+func (o *oled) show() error {
+	buf := make([]byte, o.Width*o.Height/8)
+	for y := 0; y < o.Height; y++ {
+		for x := 0; x < o.Width; x++ {
+			if color.GrayModel.Convert(o.Img.At(x, y)).(color.Gray).Y > 127 {
+				buf[(y/8)*o.Width+x] |= 1 << (y % 8)
 			}
 		}
 	}
-	if err := o.cmd(0x21, 0, width-1, 0x22, 0, height/8-1); err != nil {
+	if err := o.cmd(0x21, 0, byte(o.Width-1), 0x22, 0, byte(o.Height/8-1)); err != nil {
 		return err
 	}
 	for i := 0; i < len(buf); i += chunk {
