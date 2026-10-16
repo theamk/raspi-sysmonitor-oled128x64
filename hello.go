@@ -56,10 +56,13 @@ func wifiLine(w *wifiSampler, cols int) string {
 
 func main() {
 	runFor := flag.Duration("duration", 0, "exit after this long (0 = run forever)")
+	flip := flag.Bool("flip", true, "rotate the display 180 degrees")
+	logEvery := flag.Duration("log-interval", 10*time.Minute, "how often to log the displayed lines to stderr after the first render (0 = only once)")
 	app := appInfoSource{}
 	flag.StringVar(&app.Path, "appinfo-file", "/dev/shm/app-info", "main app status file")
 	flag.DurationVar(&app.Stale, "appinfo-timeout", 60*time.Second, "age after which the app status is shown as stale")
 	flag.Parse()
+	log.Printf("starting: flip=%v log-interval=%v appinfo-file=%s appinfo-timeout=%v", *flip, *logEvery, app.Path, app.Stale)
 
 	lock, err := acquireLock("/tmp/sysmonitor.lock")
 	if err != nil {
@@ -67,7 +70,7 @@ func main() {
 	}
 	defer lock.Close()
 
-	d, err := openOLED(1, 0x3C, true)
+	d, err := openOLED(1, 0x3C, *flip)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -98,18 +101,24 @@ func main() {
 	tick := time.NewTicker(time.Second)
 	defer tick.Stop()
 	cols := d.Width / 8 // Inconsolata 8x16 glyph width
+	var lastLog time.Time
 	for {
 		load, err := cpu.Percent()
 		if err != nil {
 			log.Fatal(err)
 		}
 		app1, app2 := app.lines(cols)
-		render(d,
+		lines := []string{
 			justify(fmt.Sprintf("CPU %.0f%%", load), time.Now().Format("15:04:05"), cols),
 			wifiLine(&wifi, cols),
 			app1,
 			app2,
-		)
+		}
+		render(d, lines...)
+		if lastLog.IsZero() || (*logEvery > 0 && time.Since(lastLog) >= *logEvery) {
+			log.Printf("display: %q", lines)
+			lastLog = time.Now()
+		}
 		select {
 		case <-tick.C:
 		case <-deadline:
