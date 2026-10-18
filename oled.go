@@ -18,9 +18,13 @@ type oled struct {
 	Img           *image.RGBA
 	f             *os.File
 	flip          bool
+	display       string
 }
 
-func openOLED(bus, addr int, flip bool) (*oled, error) {
+func openOLED(bus, addr int, flip bool, display string) (*oled, error) {
+	if display != "ssd1306" && display != "sh1106" {
+		return nil, fmt.Errorf("unsupported display %q (use ssd1306 or sh1106)", display)
+	}
 	f, err := os.OpenFile(fmt.Sprintf("/dev/i2c-%d", bus), os.O_RDWR, 0)
 	if err != nil {
 		return nil, err
@@ -30,7 +34,7 @@ func openOLED(bus, addr int, flip bool) (*oled, error) {
 		return nil, errno
 	}
 	const w, h = 128, 64
-	return &oled{Width: w, Height: h, Img: image.NewRGBA(image.Rect(0, 0, w, h)), f: f, flip: flip}, nil
+	return &oled{Width: w, Height: h, Img: image.NewRGBA(image.Rect(0, 0, w, h)), f: f, flip: flip, display: display}, nil
 }
 
 func (o *oled) Close() error { return o.f.Close() }
@@ -45,23 +49,31 @@ func (o *oled) init() error {
 	if o.flip {
 		segRemap, comScan = 0xA0, 0xC0
 	}
+	power := []byte{0x8D, 0x14}
+	addressing := []byte{0x20, 0x00}
+	precharge, vcom := byte(0xF1), byte(0x40)
+	if o.display == "sh1106" {
+		power = []byte{0xAD, 0x8B}
+		addressing = []byte{0xB0}
+		precharge, vcom = 0x22, 0x35
+	}
 	seq := [][]byte{
 		{0xAE},       // display off
 		{0xD5, 0x80}, // clock divide
 		{0xA8, 0x3F}, // multiplex 64
 		{0xD3, 0x00}, // display offset
 		{0x40},       // start line 0
-		{0x8D, 0x14}, // charge pump on
-		{0x20, 0x00}, // horizontal addressing
+		power,
+		addressing,
 		{segRemap},   // segment remap
 		{comScan},    // COM scan direction
 		{0xDA, 0x12}, // COM pins
 		{0x81, 0xCF}, // contrast
-		{0xD9, 0xF1}, // precharge
-		{0xDB, 0x40}, // VCOMH
-		{0xA4},       // follow RAM
-		{0xA6},       // normal (not inverted)
-		{0xAF},       // display on
+		{0xD9, precharge},
+		{0xDB, vcom},
+		{0xA4}, // follow RAM
+		{0xA6}, // normal (not inverted)
+		{0xAF}, // display on
 	}
 	for _, s := range seq {
 		if err := o.cmd(s...); err != nil {
@@ -71,7 +83,6 @@ func (o *oled) init() error {
 	return nil
 }
 
-// show converts Img to SSD1306 page format and writes it.
 func (o *oled) show() error {
 	buf := make([]byte, o.Width*o.Height/8)
 	for y := 0; y < o.Height; y++ {
@@ -81,11 +92,28 @@ func (o *oled) show() error {
 			}
 		}
 	}
+	if o.display == "sh1106" {
+		for page := 0; page < o.Height/8; page++ {
+			// The visible 128 columns are centered in SH1106's 132-column RAM.
+			if err := o.cmd(byte(0xB0+page), 0x02, 0x10); err != nil {
+				return err
+			}
+			if err := o.writeData(buf[page*o.Width : (page+1)*o.Width]); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
 	if err := o.cmd(0x21, 0, byte(o.Width-1), 0x22, 0, byte(o.Height/8-1)); err != nil {
 		return err
 	}
-	for i := 0; i < len(buf); i += chunk {
-		if _, err := o.f.Write(append([]byte{0x40}, buf[i:i+chunk]...)); err != nil {
+	return o.writeData(buf)
+}
+
+func (o *oled) writeData(data []byte) error {
+	for offset := 0; offset < len(data); offset += chunk {
+		end := min(offset+chunk, len(data))
+		if _, err := o.f.Write(append([]byte{0x40}, data[offset:end]...)); err != nil {
 			return err
 		}
 	}

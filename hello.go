@@ -65,6 +65,7 @@ func tempLabel() string {
 func main() {
 	runFor := flag.Duration("duration", 0, "exit after this long (0 = run forever)")
 	flip := flag.Bool("flip", true, "rotate the display 180 degrees")
+	display := flag.String("display", "ssd1306", "display controller: ssd1306 or sh1106 (I2C auto-detection is not supported)")
 	showVersion := flag.Bool("version", false, "print app name and build info, then exit")
 	logEvery := flag.Duration("log-interval", 10*time.Minute, "how often to log the displayed lines to stderr after the first render (0 = only once)")
 	app := appInfoSource{}
@@ -83,7 +84,7 @@ func main() {
 	}
 	defer lock.Close()
 
-	d, err := openOLED(1, 0x3C, *flip)
+	d, err := openOLED(1, 0x3C, *flip, *display)
 	if err != nil {
 		log.Fatal(err)
 	}
