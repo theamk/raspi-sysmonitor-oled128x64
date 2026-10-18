@@ -1,12 +1,16 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"image"
 	"image/draw"
 	"log"
+	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"golang.org/x/image/font"
@@ -76,6 +80,8 @@ func main() {
 		fmt.Println(versionString())
 		return
 	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 	log.Printf("starting: flip=%v log-interval=%v appinfo-file=%s appinfo-timeout=%v", *flip, *logEvery, app.Path, app.Stale)
 
 	lock, err := acquireLock("/tmp/sysmonitor.lock")
@@ -94,6 +100,12 @@ func main() {
 	if err := d.init(); err != nil {
 		log.Fatal(err)
 	}
+	defer func() {
+		if ctx.Err() != nil {
+			render(d, "SHUTTING DOWN")
+			log.Printf("display: %q", []string{"SHUTTING DOWN", "", "", ""})
+		}
+	}()
 
 	cpu, err := newCPUSampler()
 	if err != nil {
@@ -101,7 +113,13 @@ func main() {
 	}
 
 	render(d, "Loading...")
-	time.Sleep(2 * time.Second)
+	loading := time.NewTimer(2 * time.Second)
+	defer loading.Stop()
+	select {
+	case <-loading.C:
+	case <-ctx.Done():
+		return
+	}
 
 	var wifi wifiSampler
 	if _, _, err := wifi.Sample(); err != nil { // baseline for traffic deltas
@@ -118,16 +136,29 @@ func main() {
 	cols := d.Width / 8 // Inconsolata 8x16 glyph width
 	var lastLog time.Time
 	for {
+		if ctx.Err() != nil {
+			return
+		}
 		load, err := cpu.Percent()
 		if err != nil {
 			log.Fatal(err)
 		}
-		app1, app2 := app.lines(cols)
+		appResult := make(chan [2]string, 1)
+		go func() {
+			first, second := app.lines(cols)
+			appResult <- [2]string{first, second}
+		}()
+		var appStatus [2]string
+		select {
+		case appStatus = <-appResult:
+		case <-ctx.Done():
+			return
+		}
 		lines := []string{
 			justify(fmt.Sprintf("%s %.0f%%", tempLabel(), load), time.Now().Format("15:04:05"), cols),
 			wifiLine(&wifi, cols),
-			app1,
-			app2,
+			appStatus[0],
+			appStatus[1],
 		}
 		render(d, lines...)
 		if lastLog.IsZero() || (*logEvery > 0 && time.Since(lastLog) >= *logEvery) {
@@ -135,6 +166,8 @@ func main() {
 			lastLog = time.Now()
 		}
 		select {
+		case <-ctx.Done():
+			return
 		case <-tick.C:
 		case <-deadline:
 			return

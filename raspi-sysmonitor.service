@@ -1,11 +1,17 @@
 [Unit]
-Description=Raspberry Pi system monitor on SSD1306 OLED
+Description=Raspberry Pi system monitor on OLED
+DefaultDependencies=no
+After=local-fs.target systemd-modules-load.service systemd-tmpfiles-setup.service
+Before=sysinit.target shutdown.target
+Conflicts=shutdown.target
+RequiresMountsFor=/usr/local/bin /tmp
 
 [Service]
 ExecStart=/usr/local/bin/raspi-sysmonitor
-User=dietpi
+User=root
 Restart=on-failure
 RestartSec=5
+TimeoutStopSec=10
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=sysinit.target
