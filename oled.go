@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"io"
 	"os"
 	"syscall"
 )
@@ -22,8 +23,8 @@ type oled struct {
 }
 
 func openOLED(bus, addr int, flip bool, display string) (*oled, error) {
-	if display != "ssd1306" && display != "sh1106" {
-		return nil, fmt.Errorf("unsupported display %q (use ssd1306 or sh1106)", display)
+	if display != "auto" && display != "ssd1306" && display != "sh1106" {
+		return nil, fmt.Errorf("unsupported display %q (use auto, ssd1306 or sh1106)", display)
 	}
 	f, err := os.OpenFile(fmt.Sprintf("/dev/i2c-%d", bus), os.O_RDWR, 0)
 	if err != nil {
@@ -33,11 +34,37 @@ func openOLED(bus, addr int, flip bool, display string) (*oled, error) {
 		f.Close()
 		return nil, errno
 	}
+	if display == "auto" {
+		display, err = detectDisplay(f)
+		if err != nil {
+			f.Close()
+			return nil, fmt.Errorf("display auto-detection failed: %w; select -display=ssd1306 or -display=sh1106 explicitly", err)
+		}
+	}
 	const w, h = 128, 64
 	return &oled{Width: w, Height: h, Img: image.NewRGBA(image.Rect(0, 0, w, h)), f: f, flip: flip, display: display}, nil
 }
 
 func (o *oled) Close() error { return o.f.Close() }
+
+func detectDisplay(bus io.ReadWriter) (string, error) {
+	if _, err := bus.Write([]byte{0x00}); err != nil {
+		return "", fmt.Errorf("select status register: %w", err)
+	}
+	var status [1]byte
+	if _, err := io.ReadFull(bus, status[:]); err != nil {
+		return "", fmt.Errorf("read status register: %w", err)
+	}
+	// Observed signatures used by OneBitDisplay; clones may differ, so retain explicit overrides.
+	switch status[0] & 0x0F {
+	case 0x08:
+		return "sh1106", nil
+	case 0x03, 0x06, 0x07:
+		return "ssd1306", nil
+	default:
+		return "", fmt.Errorf("unrecognized status 0x%02x", status[0])
+	}
+}
 
 func (o *oled) cmd(c ...byte) error {
 	_, err := o.f.Write(append([]byte{0x00}, c...))
