@@ -1,6 +1,6 @@
 #!/bin/bash
 # Builds the monitor, installs it with its systemd unit on the Pi, and (re)starts it.
-host=dietpi@192.168.24.246
+host=${RPI_HOST:?Please set RPI_HOST to destination host}
 binfile=output.rpi
 unit=raspi-sysmonitor.service
 set -e -u -o pipefail -x
